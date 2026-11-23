@@ -1,0 +1,8 @@
+{
+  "name": "karasheka",
+  "version-string": "1.0.0",
+  "description": "Retro 2D karate in an apartment: nine keys plus a strike key, furniture to jump on.",
+  "dependencies": [
+    "sdl2"
+  ]
+}
