@@ -89,6 +89,7 @@ if(KARA_BUILD_GAME)
     src/app/render.cpp
     src/app/audio.cpp
     src/app/save.cpp
+    src/app/rawkeys.cpp
   )
 
   if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
@@ -124,5 +125,19 @@ if(KARA_BUILD_GAME)
     endif()
   endif()
 
-  install(TARGETS karasheka RUNTIME DESTINATION bin)
+  # Installation (used by the Debian package and by "cmake --install").
+  if(UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS karasheka RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    configure_file(data/karasheka.desktop.in karasheka.desktop @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/karasheka.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES data/io.github.amirgeva.karasheka.metainfo.xml
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+    install(FILES data/karasheka.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps)
+    install(FILES data/karasheka.6 DESTINATION ${CMAKE_INSTALL_MANDIR}/man6)
+  else()
+    install(TARGETS karasheka RUNTIME DESTINATION bin)
+  endif()
 endif()

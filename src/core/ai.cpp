@@ -15,15 +15,11 @@ Input walk(int dx) {
     return in;
 }
 
-Input guardHigh() {
+// The guard key, with up for a high guard or down for a low one.
+Input guard(Level level) {
     Input in;
-    in.center = true;
-    return in;
-}
-
-Input guardLow() {
-    Input in;
-    in.dy = 1;
+    in.guard = true;
+    in.dy = level == Level::High ? -1 : (level == Level::Low ? 1 : 0);
     return in;
 }
 
@@ -48,10 +44,13 @@ float descendTime(float h) {
 
 Brain::Brain(Control level, uint64_t seed) : rng_(seed) {
     static const Skill kSkills[3] = {
-        // delay think defend antiAir aggression slop punish climb
-        {20, 14, 0.18f, 0.12f, 0.38f, 12.f, 0.10f, 0.30f},  // easy
-        {12, 9, 0.50f, 0.40f, 0.55f, 6.f, 0.40f, 0.40f},    // normal
-        {7, 5, 0.82f, 0.72f, 0.68f, 2.f, 0.80f, 0.45f},     // hard
+        // Easy is meant to lose to a beginner: slow, timid, sloppy with range,
+        // and mostly plain punches and kicks rather than the knockdowns and
+        // attacks from the air a beginner can't yet read.
+        // delay think defend read antiAir aggression slop punish climb air flashy
+        {24, 20, 0.15f, 0.50f, 0.10f, 0.34f, 16.f, 0.05f, 0.05f, 0.30f, 0.30f},  // easy
+        {12, 9, 0.50f, 0.75f, 0.40f, 0.55f, 6.f, 0.40f, 0.40f, 0.85f, 1.00f},    // normal
+        {7, 5, 0.82f, 0.92f, 0.72f, 0.68f, 2.f, 0.80f, 0.45f, 1.00f, 1.00f},     // hard
     };
     skill_ = kSkills[std::clamp(int(level) - 1, 0, 2)];
 }
@@ -117,12 +116,22 @@ Input Brain::think(const Match& m, int self) {
         hold_ = 2;
         return emit(out_);
     }
+    if (me.airborne && !wasAirborne_) airPlan_ = rng_.uniform() < skill_.air;
+    wasAirborne_ = me.airborne;
     if (me.airborne) {
         // A jump is one press: decide afresh after landing.
         out_ = Input{};
         hold_ = 0;
         cooldown_ = 0;
         if (me.act == Act::Air) return emit(airborne(m, me, op));
+    }
+    if (me.act == Act::Roll) {
+        // So is a roll. Still holding down-forward when it ends would be a
+        // fresh press and roll again, over and over into the wall.
+        out_ = Input{};
+        hold_ = 0;
+        cooldown_ = 0;
+        return emit(out_);
     }
     if (hold_ > 0) {
         --hold_;
@@ -132,7 +141,7 @@ Input Brain::think(const Match& m, int self) {
 
     if (!controllable(me.act)) {
         // Keep guarding through block stun; otherwise wait.
-        if (me.act == Act::Block) return emit(me.crouchBlock ? guardLow() : guardHigh());
+        if (me.act == Act::Block) return emit(guard(me.guard));
         return emit(Input{});
     }
 
@@ -146,11 +155,12 @@ Input Brain::think(const Match& m, int self) {
 
 Input Brain::airborne(const Match& m, const Fighter& me, const Snapshot& op) {
     (void)m;
-    if (me.airAttack) return Input{};
+    if (me.airAttack || !airPlan_) return Input{};
     const float ahead = (op.x - me.x) * float(me.facing);
     const float above = op.y - me.y;  // > 0: we are higher
     auto strike = [&](Move mv) {
         Input in = attack(mv, me.facing);
+        if (me.airFrames + moveInfo(mv).startup < kMinStrikeFrames) return Input{};  // not allowed yet
         if (last_.strike) return Input{};  // release first; try again next tick
         return in;
     };
@@ -177,14 +187,10 @@ bool Brain::threatened(const Match& m, const Fighter& me, const Snapshot& op, In
             if (dist < r.ahead + 12.f && rng_.uniform() < skill_.defend) {
                 Level level = mi.level;
                 const float elevation = me.y - op.y;  // > 0: the attacker is higher
-                if (elevation > kElevation) level = Level::Overhead;
+                if (elevation > kElevation) level = Level::High;
                 else if (elevation < -kElevation) level = Level::Low;
-                bool low = level == Level::Low;
-                if (level == Level::Mid) {
-                    const bool high = op.move == Move::Roundhouse || op.move == Move::Uppercut;
-                    low = rng_.uniform() < (high ? 0.7f : 0.3f);
-                }
-                out = low ? guardLow() : guardHigh();
+                if (rng_.uniform() >= skill_.read) level = Level((int(level) + 1 + int(rng_.below(2))) % 3);  // misread
+                out = guard(level);
                 hold_ = std::clamp(mi.startup + std::min(mi.active, 10) - op.frame + 8, 4, 26);
                 return true;
             }
@@ -197,14 +203,19 @@ bool Brain::threatened(const Match& m, const Fighter& me, const Snapshot& op, In
             antiAirPlan_ = rng_.uniform() < skill_.antiAir;
         }
         const bool coming = (op.x - me.x) * op.vx < 0.f || dist < 22.f;
-        const float above = me.y - op.y;
-        if (antiAirPlan_ && coming && dist < 26.f && above > 10.f && above < 52.f && op.vy > -60.f) {
+        // Where the jumper will be (it is seen `delay` ticks late) when an
+        // uppercut started now is out.
+        const float t = float(moveInfo(Move::Uppercut).startup + 2 + skill_.delay) * kTick;
+        const float px = op.x + op.vx * t;
+        const float py = op.y + op.vy * t + 0.5f * kGravity * t * t;
+        const float pdist = std::fabs(px - me.x), above = me.y - py;
+        if (antiAirPlan_ && coming && pdist < 24.f && above > 4.f && above < 56.f) {
             antiAirPlan_ = false;
             out = attack(Move::Uppercut, me.facing);
             return true;
         }
         if (!antiAirPlan_ && coming && dist < 46.f && op.act == Act::Attack && rng_.uniform() < skill_.defend * 0.25f) {
-            out = guardHigh();  // air attacks are overheads
+            out = guard(Level::High);  // attacks from the air land high
             hold_ = 14;
             return true;
         }
@@ -215,8 +226,15 @@ bool Brain::threatened(const Match& m, const Fighter& me, const Snapshot& op, In
          op.frame >= moveInfo(op.move).startup + moveInfo(op.move).active && !moveInfo(op.move).airborne) ||
         (op.act == Act::Land && op.frame < 6);
     if (recovering && op.frame <= 2 && rng_.uniform() < skill_.punish) {
+        // Only with a move that lands before they recover.
+        int left = 6;  // a landing
+        if (op.act == Act::Attack) {
+            const MoveInfo& mi = moveInfo(op.move);
+            left = mi.startup + mi.active + mi.recovery;
+        }
+        left -= op.frame + skill_.delay;
         for (Move mv : {Move::Punch, Move::LowPunch, Move::FrontKick, Move::Sweep}) {
-            if (inRange(mv, dist, 0.f)) {
+            if (moveInfo(mv).startup < left && inRange(mv, dist, 0.f)) {
                 out = attack(mv, me.facing);
                 return true;
             }
@@ -265,7 +283,7 @@ bool Brain::decide(const Match& m, const Fighter& me, const Snapshot& op, Input&
             out = jump(sign(dx));
             return true;
         }
-        out = r < 0.5f ? guardHigh() : Input{};
+        out = r < 0.5f ? guard(Level::Low) : Input{};  // attacks from below land low
         return true;
     }
     perch_ = 0;
@@ -275,7 +293,7 @@ bool Brain::decide(const Match& m, const Fighter& me, const Snapshot& op, Input&
         if (dist < 22.f) out = walk(-sign(dx));
         else if (dist < 44.f && r < 0.25f) out = jump(sign(dx));
         else if (dist > 50.f) out = walk(sign(dx));
-        else out = r < 0.6f ? guardHigh() : Input{};
+        else out = r < 0.6f ? guard(Level::High) : Input{};
         return true;
     }
 
@@ -283,7 +301,7 @@ bool Brain::decide(const Match& m, const Fighter& me, const Snapshot& op, Input&
     if (op.act == Act::Down || op.act == Act::GetUp || op.act == Act::Fall) {
         if (dist < 28.f) out = walk(-sign(dx));
         else if (dist > 44.f) out = walk(sign(dx));
-        else out = guardHigh();
+        else out = guard(Level::Mid);
         return true;
     }
 
@@ -325,22 +343,25 @@ bool Brain::decide(const Match& m, const Fighter& me, const Snapshot& op, Input&
             Move move;
             float weight;
         };
-        const bool opGuard = op.act == Act::Guard;
+        const bool opGuard = op.act == Act::Guard || op.act == Act::Block;
         const bool opCrouch = op.act == Act::Crouch;
         const float slop = rng_.uniform(-skill_.slop, skill_.slop);
         Option opts[] = {
             {Move::Punch, opCrouch ? 1.f : 3.f},
             {Move::FrontKick, opCrouch ? 1.f : 3.f},
             {Move::LowPunch, 2.f},
-            {Move::LowKick, opGuard ? 4.f : 2.f},
-            {Move::Sweep, opGuard ? 5.f : 2.f},
-            {Move::Roundhouse, opCrouch ? 0.f : 2.f},
-            {Move::Uppercut, op.airborne ? 6.f : 0.7f},
-            {Move::FlyingKick, opCrouch ? 4.f : 0.7f},
+            {Move::LowKick, 2.f},
+            {Move::Sweep, 2.f},
+            {Move::Roundhouse, opCrouch ? 0.f : 2.f},  // a crouch ducks it
+            {Move::Uppercut, op.airborne ? 6.f : (opCrouch ? 0.f : 0.7f)},
+            {Move::FlyingKick, 0.7f},
         };
         float total = 0.f;
         for (Option& o : opts) {
             if (!inRange(o.move, dist, slop)) o.weight = 0.f;
+            const bool flashy = o.move == Move::Sweep || o.move == Move::Roundhouse || o.move == Move::FlyingKick;
+            if (flashy && rng_.uniform() >= skill_.flashy) o.weight = 0.f;
+            if (opGuard) o.weight *= moveInfo(o.move).level == op.guard ? 0.15f : 2.f;  // go around the guard
             total += o.weight;
         }
         if (total > 0.f) {
@@ -364,10 +385,8 @@ bool Brain::decide(const Match& m, const Fighter& me, const Snapshot& op, Input&
         else out = walk(sign(dx));
     } else if (dist < 18.f) {
         out = r2 < 0.15f ? Input::fromPad(fwd > 0 ? 3 : 1, false) : walk(-sign(dx));  // roll through, or back off
-    } else if (r2 < 0.3f) {
-        out = guardHigh();
     } else if (r2 < 0.45f) {
-        out = guardLow();
+        out = guard(Level(std::min(2, int(r2 / 0.15f))));  // a guess: mid, low or high
     } else if (r2 < 0.7f) {
         out = walk(sign(dx));
     } else if (r2 < 0.85f) {

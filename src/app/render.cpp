@@ -23,8 +23,8 @@ constexpr uint32_t kGrey = opaque(0xA89C8E);
 
 const char* const kModeNames[kModeCount] = {"1 PLAYER", "2 PLAYERS", "WATCH CPU"};
 const char* const kCpuNames[3] = {"EASY", "NORMAL", "HARD"};
-const char* const kLayoutNames[kLayoutCount + 1] = {"QWE/ASD/ZXC + LSHIFT", "YUI/HJK/NM, + SPACE",
-                                                    "NUMPAD + NUM 0", "ANY OF THE THREE"};
+const char* const kLayoutNames[kLayoutCount + 1] = {"QWE/ASD/ZXC  LSHIFT LCTRL", "YUI/HJK/NM,  SPACE L",
+                                                    "NUMPAD  RSHIFT RCTRL", "ANY OF THE THREE"};
 
 Skeleton offset(Skeleton s, float dx, float dy) {
     Vec* all[] = {&s.hip, &s.shoulder, &s.neck, &s.head, &s.elbow[0], &s.elbow[1], &s.hand[0], &s.hand[1],
@@ -390,21 +390,23 @@ void Game::drawPause() {
     }
 }
 
-// F1: the nine keys, with and without strike.
+// F1: the keys, then the nine directions on their own and with strike.
 void Game::drawHelp() {
     Image& img = frame_;
     img.fill(0, 0, kWorldW, kWorldH, opaque(0x0A070C));
     img.textOutlined("HOW TO FIGHT", kWorldW / 2, 4, kGold, kInk, 1, 0);
-    img.text("KEYS", 8, 16, kGrey);
-    img.text("QWE/ASD/ZXC + LSHIFT", 44, 16, kCream);
-    img.text("YUI/HJK/NM, + SPACE", 44, 25, kCream);
-    img.text("NUMPAD + NUM 0", 44, 34, kCream);
-    img.text("7 8 9", 216, 16, kGrey);
-    img.text("4 5 6", 216, 25, kGrey);
-    img.text("1 2 3", 216, 34, kGrey);
-    img.text("LAYOUT", 254, 25, kGrey);
+    const int kx[3] = {8, 104, 196};
+    img.text("DIRECTIONS", kx[0], 15, kGrey);
+    img.text("STRIKE", kx[1], 15, kGold);
+    img.text("GUARD", kx[2], 15, kGold);
+    static const char* const kKeys[3][3] = {{"QWE/ASD/ZXC", "LEFT SHIFT", "LEFT CTRL"},
+                                            {"YUI/HJK/NM,", "SPACE", "L"},
+                                            {"NUMPAD", "RIGHT SHIFT/0", "RIGHT CTRL/ENTER"}};
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) img.text(kKeys[r][c], kx[c], 24 + 9 * r, kCream);
+    img.text("ONE PLAYER: MIX THEM, E.G. NUMPAD + LEFT SHIFT/CTRL", 8, 52, kGrey);
 
-    static const char* const kMove[9] = {"ROLL BACK", "CROUCH", "ROLL FWD", "WALK BACK", "GUARD",
+    static const char* const kMove[9] = {"ROLL BACK", "CROUCH", "ROLL FWD", "WALK BACK", "MID GUARD",
                                          "WALK FWD",  "JUMP BACK", "JUMP UP", "JUMP FWD"};
     static const char* const kStrike[9] = {"LOW PUNCH",  "LOW KICK", "SWEEP",    "ROUNDHOUSE", "PUNCH",
                                            "FRONT KICK", "BACKFLIP", "UPPERCUT", "FLYING KICK"};
@@ -418,22 +420,25 @@ void Game::drawHelp() {
                 img.text(names[pad - 1], x, y, kCream);
             }
     };
-    grid("MOVE", kMove, 47);
-    grid("+ STRIKE", kStrike, 83);
-    const int ty = 117;
-    img.text("IN THE AIR: STRIKE = AIR KICK,", 8, ty, kCream);
-    img.text("DOWN + STRIKE = DIVE KICK (THE HIGHER, THE HARDER)", 8, ty + 9, kCream);
-    img.text("GUARD BLOCKS ALL BUT LOW ATTACKS; CROUCH BLOCKS", 8, ty + 18, kGrey);
-    img.text("ALL BUT JUMP-INS AND ATTACKS FROM ABOVE.", 8, ty + 27, kGrey);
-    img.text("BACK/FWD MIRROR WHEN YOU STAND ON THE RIGHT.", 8, ty + 36, kGrey);
+    grid("MOVE", kMove, 63);
+    grid("+ STRIKE", kStrike, 96);
+    const int ty = 128;
+    img.text("+ GUARD", 8, ty, kGold);
+    img.text("UP: HIGH    ALONE OR 5: MID    DOWN: LOW", 62, ty, kCream);
+    img.text("HIGH: ROUNDHOUSE, UPPERCUT, ANY KICK FROM THE AIR", 8, ty + 10, kGrey);
+    img.text("MID: PUNCHES, FRONT KICK    LOW: LOW KICK, SWEEP", 8, ty + 19, kGrey);
+    img.text("AIR: STRIKE = AIR KICK, DOWN + STRIKE = DIVE KICK", 8, ty + 28, kGrey);
     img.textOutlined("ESC PAUSE  F2 SOUND  F11 FULLSCREEN  F1 CLOSE", kWorldW / 2, 171, kGold, kInk, 1, 0);
 }
 
 void Game::drawCover() {
     Image& img = frame_;
     for (int y = 0; y < 80; ++y) img.fill(0, y, kWorldW, 1, argb(10, 6, 8, int(170.f * (1.f - float(y) / 80.f))));
-    art::drawLogo(img, kWorldW / 2, 17, 4);
-    img.textOutlined("KARATE IN THE APARTMENT", kWorldW / 2, 53, kCream, kInk, 1, 0);
+    // The logo spans about 80% of what stays in the picture.
+    const int cell = std::clamp(int(std::lround(coverView_ * 0.8f / 62.f)), 2, 4);
+    const int cx = int(std::lround(coverFocus_));
+    art::drawLogo(img, cx, 17, cell);
+    img.textOutlined("KARATE IN THE APARTMENT", cx, 17 + 7 * cell + 8, kCream, kInk, 1, 0);
 }
 
 // A sheet of every pose, for tuning the skeleton (--scene poses).

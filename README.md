@@ -10,8 +10,9 @@ opponent. The higher you dive from, the harder it hits. Light furniture
 breaks under a heavy landing.
 
 Each fighter is played with nine keys laid out like a numeric keypad, plus
-a strike key: 9 directions times 2 gives 18 actions, in the spirit of the
-one-button joystick karate games of the 1980s.
+a strike key and a guard key, in the spirit of the one-button joystick
+karate games of the 1980s: the nine directions on their own move, with strike
+they attack, and with guard they block high, mid or low.
 
 The whole game is drawn at 320 x 180 in crisp pixels and scaled up to the
 window. Every fighter, room and piece of furniture is drawn by code, and every
@@ -23,17 +24,17 @@ A sharper 720p version of the clip above is in
 
 ## How to play
 
-Three key layouts are available. Each player picks one in the menu; a single
-player can use any of them.
+Each fighter has nine direction keys laid out like a numeric keypad, plus two
+modifiers: **strike** and **guard**. Three key layouts are available, and no
+two share a key. In two-player mode each player picks one in the menu. A
+single player can use all of them at once, for example the numpad with the
+right hand and Left Shift / Left Ctrl with the left.
 
-| Layout | Directions | Strike |
-| --- | --- | --- |
-| Left hand | `Q W E` / `A S D` / `Z X C` | Left Shift (or Left Ctrl) |
-| Right hand | `Y U I` / `H J K` / `N M ,` | Space (or Right Shift) |
-| Numpad | `7 8 9` / `4 5 6` / `1 2 3` | Num 0 (or Num Enter) |
-
-The numpad uses Num 0 rather than Shift because Windows turns Shift + numpad
-keys into arrow keys.
+| Layout | Directions | Strike | Guard |
+| --- | --- | --- | --- |
+| Left hand | `Q W E` / `A S D` / `Z X C` | Left Shift | Left Ctrl |
+| Right hand | `Y U I` / `H J K` / `N M ,` | Space | L |
+| Numpad | `7 8 9` / `4 5 6` / `1 2 3` | Right Shift (or Num 0) | Right Ctrl (or Num Enter) |
 
 Holding two keys combines them, so 4 + 8 works like 7. Moving and jumping go
 the way the key points on screen. Attacks are relative to your opponent:
@@ -45,7 +46,7 @@ fighter on the left; for the fighter on the right, they mirror.
 | | | |
 | --- | --- | --- |
 | 7 jump back | 8 jump up | 9 jump forward |
-| 4 walk back | 5 guard | 6 walk forward |
+| 4 walk back | 5 mid guard | 6 walk forward |
 | 1 roll back | 2 crouch | 3 roll forward |
 
 **With the strike key held** (or strike alone for the punch):
@@ -56,11 +57,18 @@ fighter on the left; for the fighter on the right, they mirror.
 | 4 roundhouse | 5 punch | 6 front kick |
 | 1 low punch | 2 low kick | 3 sweep |
 
+**With the guard key held:** up (7, 8 or 9) guards high, nothing (or the
+middle row) guards mid, and down (1, 2 or 3) guards low. You stand still while
+you guard.
+
 **In the air:** strike is an air kick, and down + strike is a dive kick.
 
-You can press the direction and the strike key in either order. A strike
-pressed a moment before you are free to act (during a landing, say) still
-comes out.
+Keys meant together can be pressed in either order, up to 4 frames (about
+1/15 s) apart: 8 then strike is still an uppercut rather than a jump, strike
+then 6 is still a front kick rather than a punch, and 2, 6, strike is a sweep
+rather than a roll. The same goes for the guard key (8 then guard is a high
+guard, not a jump). A strike pressed a moment before you are free to act
+(during a landing, say) still comes out.
 
 | Key | Action |
 | --- | --- |
@@ -90,13 +98,19 @@ Your choices are saved in `settings.ini` in the per-user folder SDL picks
 * Each fighter starts a round with 100 health. A round ends with a knockout,
   or when time runs out (the fighter with more health left wins). A double
   knockout or a tie gives both fighters the round.
-* **Guard (5)** blocks everything except low attacks. **Crouching (2)**
-  blocks everything except overheads: air attacks, and any attack from a
-  fighter standing a good bit higher than you, such as on a table. An attack
-  from below at a fighter standing on furniture counts as low. You can't
-  guard in the air or with your back to the attacker.
-* High attacks (the roundhouse and the uppercut) pass over a crouching
-  fighter. The sweep and the low kick go under a jump.
+* Every attack lands **high**, **mid** or **low**, and only the guard at
+  that height blocks it (see the table below). Any attack from the air is
+  high, and so is any attack from a fighter standing a good bit higher than
+  you, such as on a table. An attack from below at a fighter standing on
+  furniture is low. You can't guard in the air or with your back to the
+  attacker.
+* No attack lands sooner than 12 frames (200 ms) after the attacker starts
+  it, or after they leave the ground for an attack from the air. A guard
+  takes effect the moment you press it, so you can see an attack coming and
+  pick the right guard in time.
+* Crouching on its own blocks nothing, but high attacks (the roundhouse and
+  the uppercut) pass over a crouching fighter. The sweep and the low kick go
+  under a jump.
 * Some hits knock you down. So does any hit in the air. You're invulnerable
   while you're down and while you get up.
 * A roll passes under high attacks and through your opponent, so you come
@@ -109,17 +123,17 @@ can hit (active), and how long you're stuck afterwards (recovery).
 
 | Move | Keys | Startup / active / recovery | Damage | Guard with | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Punch | strike (or 5 + strike) | 5 / 3 / 9 | 6 | either | Fast reverse punch. |
-| Front kick | forward + strike | 8 / 4 / 13 | 9 | either | Good reach. |
-| Roundhouse | back + strike | 12 / 4 / 18 | 14 | either | Head height, steps in, knocks down. |
-| Uppercut | 8 + strike | 6 / 5 / 16 | 11 | either | Anti-air, knocks down. |
-| Low punch | down-back + strike | 4 / 3 / 8 | 5 | either | Quick poke from a crouch. |
-| Low kick | 2 + strike | 6 / 3 / 11 | 7 | crouch | Fast, low. |
-| Sweep | down-forward + strike | 10 / 5 / 20 | 10 | crouch | Knocks down. |
-| Flying kick | up-forward + strike | 7 / until landing | 12 | guard | Leaps forward, knocks down. |
-| Backflip kick | up-back + strike | 4 / 8 | 9 | either | Kicks up while flipping away. |
-| Air kick | strike in the air | 4 / until landing | 9 | guard | |
-| Dive kick | down + strike in the air | 3 / until landing | 10 to 24 | guard | Steep dive. Damage grows with height, knocks down. |
+| Punch | strike (or 5 + strike) | 12 / 3 / 10 | 6 | mid | Reverse punch, the quickest. |
+| Front kick | forward + strike | 14 / 4 / 13 | 9 | mid | Good reach. |
+| Roundhouse | back + strike | 18 / 4 / 18 | 14 | high | Head height, steps in, knocks down. |
+| Uppercut | 8 + strike | 13 / 5 / 16 | 11 | high | Anti-air, knocks down. |
+| Low punch | down-back + strike | 12 / 3 / 9 | 5 | mid | A poke from a crouch. |
+| Low kick | 2 + strike | 13 / 3 / 11 | 7 | low | |
+| Sweep | down-forward + strike | 16 / 5 / 20 | 10 | low | Knocks down. |
+| Flying kick | up-forward + strike | 12 / until landing | 12 | high | Leaps forward, knocks down. |
+| Backflip kick | up-back + strike | 4 / 8 | 9 | high | Kicks up while flipping away; only reaches someone above you. |
+| Air kick | strike in the air | 4 / until landing | 9 | high | Not before 8 frames in the air. |
+| Dive kick | down + strike in the air | 3 / until landing | 10 to 24 | high | Steep dive, not before 9 frames in the air. Damage grows with height, knocks down. |
 
 ### Furniture
 
@@ -143,16 +157,22 @@ Each round starts with the room as new.
 
 ### Computer opponents
 
-A computer player uses the same nine keys and strike key as you do. It sees
-you a few frames late (20 frames on Easy, 12 on Normal, 7 on Hard) and decides
-from that what to do:
+A computer player uses the same keys as you do. It sees you a few frames
+late (24 frames on Easy, 12 on Normal, 7 on Hard) and decides from that what
+to do:
 
-* It guards or ducks attacks it sees coming, using the right guard for each.
+* It guards attacks it sees coming, usually at the right height.
 * It meets jump-ins with an uppercut.
-* It punishes moves that miss.
-* It picks attacks by range and by what you're doing. It sweeps a standing
-  guard and jumps in on someone crouching.
+* It punishes moves that miss, with a move fast enough to land in time.
+* It picks attacks by range and by what you're doing, aiming at a height
+  you're not guarding.
 * It climbs onto furniture and waits for you to wander into diving range.
+
+Easy is meant to lose to a beginner. It is slow and timid, misjudges range,
+rarely guards (often at the wrong height), stays off the furniture, and
+mostly throws plain punches and kicks rather than flying kicks, sweeps,
+roundhouses and attacks from the air. Normal and Hard do all of the above,
+Hard faster and more accurately.
 
 The levels differ in reaction time, how often they guard, how often they
 attack, and how well they judge range.
@@ -210,8 +230,8 @@ cmake --build build -j
 ./build/karasheka
 ```
 
-The game has been built and tested on Windows only. The Linux and macOS steps
-use only SDL2 and the standard library, but have not been tried yet.
+The game is built and tested on Windows and on Ubuntu 22.04 (GCC). The macOS
+steps use only SDL2 and the standard library, but have not been tried yet.
 
 ### Windows release and itch.io
 
@@ -232,6 +252,24 @@ tools/release_windows.sh your-name/karasheka   # ... and upload
 The version comes from `project(Karasheka VERSION ...)` in `CMakeLists.txt`
 and is shown on the menu.
 
+### Linux package (.deb)
+
+`tools/build_deb.sh` builds a Debian/Ubuntu package from the files git
+tracks, with the packaging in `debian/`. It runs the tests during the build
+and installs the game in `/usr/games`, with a desktop entry, an icon, AppStream
+metadata and a man page (all in `data/`). Build it on the oldest release you
+want to support, since the package's library dependencies come from the system
+that builds it: a package built on Ubuntu 22.04 installs on 22.04 and newer.
+
+```sh
+tools/build_deb.sh --install-deps      # build/deb/karasheka_<version>-1_amd64.deb
+sudo apt install ./build/deb/karasheka_1.0.0-1_amd64.deb
+```
+
+`debian/changelog` must name the same version as `CMakeLists.txt`; the script
+stops if they disagree. On itch.io the package goes to the `linux-deb`
+channel.
+
 ## Tests
 
 `kara_tests` checks the game without opening a window:
@@ -240,10 +278,16 @@ and is shown on the menu.
   fighter on the right.
 * The skeleton stands on the floor at about 50 pixels tall, lies flat when
   knocked down, and crouches below the roundhouse.
-* Hits and guards: a punch hits, and a guard blocks it. A guard does not stop
-  a sweep, but crouching does. Crouching ducks a roundhouse and blocks a
-  front kick. An air kick beats a crouching guard. A roll passes through the
-  opponent.
+* Hits and guards: each ground attack is blocked by the guard at its height
+  and by no other; a jump-in air kick only by the high guard. Crouching ducks
+  a roundhouse but blocks nothing. A roll passes through the opponent.
+* Chords: keys meant together, pressed up to 4 frames apart in either order,
+  give the move they make together (8 then strike is an uppercut, strike then
+  6 a front kick, 2, 6, strike a sweep, 8 then guard a high guard). Letting
+  go of a key early does not change the move.
+* Strike timing: no attack lands on a fighter on the floor sooner than 12
+  frames after it starts (or after leaving the ground), and the right guard
+  pressed as late as the frame it lands blocks it.
 * Furniture: a jump lands on the kitchen table and walking off its edge
   drops to the floor. A dive kick from the table hits harder than one from
   a floor jump. A fighter knocked down onto the stool breaks it and falls
@@ -253,6 +297,10 @@ and is shown on the menu.
   Each pairing prints statistics such as moves tried and landed, blocks,
   furniture landings, time in the air and knockouts. The same seed always
   plays the same match, and Hard beats Easy.
+* Against a beginner: a scripted beginner (slow to react, simple attacks,
+  guesses at guarding, ignores the furniture) plays each level. It must beat
+  Easy in most matches and lose to Hard in most, and each level must do
+  better against it than the one below.
 
 ```sh
 ctest --test-dir build -C Release
@@ -276,13 +324,19 @@ build/Release/kara_tests probe 12345 40     # health after 40 s of a Hard vs Har
 
 Captures are drawn in software, so they need no window or graphics driver.
 
-### Regenerating the clip, the cover and the screenshot
+### Regenerating the clip, the covers and the screenshots
 
 `tools/make_media.sh` makes `docs/gameplay.mp4` (1280 x 720, 30 fps),
-`docs/gameplay.gif` (640 px wide, 15 fps, exactly 2x the game's pixels),
-`docs/cover.png` (1280 x 640, the size GitHub uses for a repository's
-social preview) and `docs/screenshot.png`. You need bash and ffmpeg with
-libx264.
+`docs/gameplay.gif` (800 px wide, 15 fps), the store screenshots in
+`docs/store/screenshots/` (1280 x 720), `docs/cover.png` (1280 x 640, the
+size GitHub uses for a repository's social preview) and
+`docs/store/itch-cover.png` (630 x 500, itch.io's cover size; the logo and
+the crop adapt to the narrower frame). It also writes two sheets for
+checking the result by eye: `dist/gameplay-sheet.png` (a frame every 2.5 s)
+and `dist/screenshots-sheet.png`. Every capture uses a fixed seed, so a
+re-run reproduces the same files. You need bash and ffmpeg with libx264.
+The store text is in `docs/store/tagline.txt` and
+`docs/store/description.md`.
 
 ```sh
 tools/make_media.sh                      # uses build/Release/karasheka or build/karasheka
@@ -301,8 +355,8 @@ what was auditioned.
 src/core/   skeleton and poses, moves and fight rules, rooms and furniture, computer players (no SDL)
 src/gfx/    software framebuffer, 5x7 pixel font, procedural art, anti-aliased canvas for the icon (no SDL)
 src/app/    SDL2 game: menus, input layouts, effects, rendering, synthesized audio, settings
-tools/      icongen (app icon as a Windows .ico at build time), make_media.sh (clip, cover, screenshot),
+tools/      icongen (app icon as a Windows .ico at build time), make_media.sh (clip, covers, screenshots),
             release_windows.sh and release/ (Windows package and itch.io upload)
 tests/      headless tests
-docs/       gameplay.mp4, gameplay.gif, cover.png, screenshot.png
+docs/       gameplay.mp4, gameplay.gif, cover.png; store/ (itch cover, screenshots, tagline, description)
 ```

@@ -121,6 +121,8 @@ private:
     int pauseSel_ = 0;
     int menuSel_ = 0;
     bool cover_ = false;
+    float coverView_ = 320.f;   // cover: width of the frame that stays in the picture
+    float coverFocus_ = 160.f;  // cover: frame column kept in the middle
 
     Image frame_{kWorldW, kWorldH};
     std::array<Image, kRoomCount> rooms_;

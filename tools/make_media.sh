@@ -1,53 +1,103 @@
 #!/usr/bin/env bash
-# Records the gameplay clip and encodes docs/gameplay.mp4 (1280x720, 30 fps)
-# and docs/gameplay.gif (640 px, 15 fps), then renders the cover image
-# docs/cover.png (1280x640, GitHub's social preview size) and a screenshot
-# docs/screenshot.png (1280x720).
-# Needs ffmpeg (with libx264) on the PATH.
+# Publication media: gameplay clip (MP4 + GIF), store screenshots and cover
+# images, all rendered offscreen by the game itself (deterministic: re-runs
+# reproduce the same files). Edit the CONFIG block for this game.
 #
-# Usage: tools/make_media.sh [path/to/karasheka]
-#   defaults to build/Release/karasheka (Visual Studio) or build/karasheka
+#   docs/gameplay.mp4                  1280x720 H.264 clip
+#   docs/gameplay.gif                  smaller GIF of the same recording
+#   docs/store/screenshots/<name>.png  store screenshots
+#   docs/cover.png                     1280x640 (GitHub social preview)
+#   docs/store/itch-cover.png          630x500 (itch.io cover image)
+#   dist/gameplay-sheet.png            contact sheet of the clip, for checking
+#   dist/screenshots-sheet.png         all screenshots on one sheet, for checking
+#
+# Usage: tools/make_media.sh [path/to/game]
+#   defaults to build/Release/<exe> (Visual Studio) or build/<exe>
+# Needs bash and ffmpeg (with libx264) on the PATH.
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
+
+# ---- CONFIG -------------------------------------------------------------
+EXE_NAME=karasheka           # CMake executable target
+CLIP_SIZE=1280x720           # recording size (keep the UI scale readable)
+FPS=30                       # recording and MP4 frame rate
+GIF_W=800                    # GIF width; height keeps the aspect
+GIF_FPS=15
+RECORD=1                     # 0 if the game has no --record mode yet
+# Store screenshots: "<file name>|<game arguments for --screenshot>"
+SHOT_SIZE=1280x720
+SHOTS=(
+  "01-menu|--scene menu"
+  "02-flying-kick|--scene fight --seed 21 --time 17"
+  "03-from-the-shelf|--scene fight --seed 12345 --time 17"
+  "04-knockdown|--scene fight --seed 42 --time 9"
+  "05-ko|--scene ko"
+  "06-keys|--scene help"
+)
+COVER_SCENE=(--scene cover --time 12)  # empty array: no cover scene, skip covers
+# -------------------------------------------------------------------------
+
 GAME=${1:-}
 if [[ -z "$GAME" ]]; then
-  if [[ -x build/Release/karasheka || -x build/Release/karasheka.exe ]]; then
-    GAME=build/Release/karasheka
+  if [[ -x build/Release/$EXE_NAME || -x build/Release/$EXE_NAME.exe ]]; then
+    GAME=build/Release/$EXE_NAME
   else
-    GAME=build/karasheka
+    GAME=build/$EXE_NAME
   fi
 fi
-
-W=1280
-H=720
-FPS=30
-GIF_W=640
-GIF_FPS=15
-OUT=docs
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$OUT"
+mkdir -p docs/store/screenshots dist
 
-echo "Recording gameplay..."
-"$GAME" --record - --size "${W}x${H}" --fps "$FPS" |
-  ffmpeg -y -loglevel error -f rawvideo -pix_fmt rgb24 -s "${W}x${H}" -r "$FPS" -i - \
-    -c:v ffv1 "$WORK/clip.mkv"
+if [[ $RECORD == 1 ]]; then
+  W=${CLIP_SIZE%x*}
+  echo "Recording gameplay..."
+  "$GAME" --record - --size "$CLIP_SIZE" --fps "$FPS" |
+    ffmpeg -y -loglevel error -f rawvideo -pix_fmt rgb24 -s "$CLIP_SIZE" -r "$FPS" -i - \
+      -c:v ffv1 "$WORK/clip.mkv"
 
-echo "Encoding $OUT/gameplay.mp4..."
-ffmpeg -y -loglevel error -i "$WORK/clip.mkv" \
-  -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -movflags +faststart "$OUT/gameplay.mp4"
+  echo "Encoding docs/gameplay.mp4..."
+  ffmpeg -y -loglevel error -i "$WORK/clip.mkv" \
+    -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -movflags +faststart docs/gameplay.mp4
 
-echo "Encoding $OUT/gameplay.gif..."
-# The game is drawn at 320x180, so a 2x nearest-neighbour GIF is pixel exact.
-ffmpeg -y -loglevel error -i "$WORK/clip.mkv" \
-  -vf "fps=${GIF_FPS},scale=${GIF_W}:-1:flags=neighbor,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
-  -loop 0 "$OUT/gameplay.gif"
+  echo "Encoding docs/gameplay.gif..."
+  ffmpeg -y -loglevel error -i "$WORK/clip.mkv" \
+    -vf "fps=${GIF_FPS},scale=${GIF_W}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+    -loop 0 docs/gameplay.gif
 
-echo "Rendering $OUT/cover.png and $OUT/screenshot.png..."
-"$GAME" --screenshot "$WORK/cover.bmp" --scene cover --size 1280x640 --time 12
-ffmpeg -y -loglevel error -i "$WORK/cover.bmp" "$OUT/cover.png"
-"$GAME" --screenshot "$WORK/shot.bmp" --scene fight --size 1280x720 --time 14
-ffmpeg -y -loglevel error -i "$WORK/shot.bmp" "$OUT/screenshot.png"
+  # One frame every 2.5 s, 3 across, to eyeball the clip.
+  ffmpeg -y -loglevel error -i "$WORK/clip.mkv" \
+    -vf "fps=0.4,scale=$((W / 3)):-1,tile=3x5" -frames:v 1 dist/gameplay-sheet.png
+fi
 
-ls -l "$OUT/gameplay.mp4" "$OUT/gameplay.gif" "$OUT/cover.png" "$OUT/screenshot.png"
+: > "$WORK/shots.txt"
+for shot in "${SHOTS[@]}"; do
+  name=${shot%%|*}
+  read -r -a args <<< "${shot#*|}"
+  echo "Screenshot $name..."
+  "$GAME" --screenshot "$WORK/$name.bmp" --size "$SHOT_SIZE" "${args[@]}" >/dev/null 2>&1
+  ffmpeg -y -loglevel error -i "$WORK/$name.bmp" "docs/store/screenshots/$name.png"
+  echo "file '$(cygpath -m "$PWD/docs/store/screenshots/$name.png" 2>/dev/null || echo "$PWD/docs/store/screenshots/$name.png")'" >> "$WORK/shots.txt"
+done
+if [[ ${#SHOTS[@]} -gt 0 ]]; then
+  # All screenshots on one sheet, two across, to eyeball them together.
+  ffmpeg -y -loglevel error -f concat -safe 0 -i "$WORK/shots.txt" \
+    -vf "scale=640:-1,tile=2x$(( (${#SHOTS[@]} + 1) / 2 ))" -frames:v 1 dist/screenshots-sheet.png
+fi
+
+if [[ ${#COVER_SCENE[@]} -gt 0 ]]; then
+  echo "Rendering covers..."
+  "$GAME" --screenshot "$WORK/cover.bmp" --size 1280x640 "${COVER_SCENE[@]}" >/dev/null 2>&1
+  ffmpeg -y -loglevel error -i "$WORK/cover.bmp" docs/cover.png
+  "$GAME" --screenshot "$WORK/itch.bmp" --size 630x500 "${COVER_SCENE[@]}" >/dev/null 2>&1
+  ffmpeg -y -loglevel error -i "$WORK/itch.bmp" docs/store/itch-cover.png
+fi
+
+ls -l docs/gameplay.* docs/cover.png docs/store/itch-cover.png docs/store/screenshots/*.png 2>/dev/null
+size() { stat -c %s "$1" 2>/dev/null || echo 0; }
+if [[ -f docs/gameplay.gif && $(size docs/gameplay.gif) -gt 8000000 ]]; then
+  echo "warning: gameplay.gif is over 8 MB; shorten the clip or lower GIF_W / GIF_FPS" >&2
+fi
+if [[ -f docs/store/itch-cover.png && $(size docs/store/itch-cover.png) -gt 3000000 ]]; then
+  echo "warning: itch-cover.png is over itch's 3 MB limit" >&2
+fi

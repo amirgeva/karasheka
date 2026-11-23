@@ -56,7 +56,7 @@ struct Pose {
 Pose lerp(const Pose& a, const Pose& b, float t);
 
 enum class PoseId : int {
-    Stance, StanceLow, Walk1, Walk2, Guard, Crouch, PreJump, Tuck,
+    Stance, StanceLow, Walk1, Walk2, Guard, GuardHigh, GuardLow, Crouch, PreJump, Tuck,
     PunchChamber, PunchStrike,
     FrontChamber, FrontStrike, FrontFinish,
     RoundChamber, RoundStrike, RoundFinish,

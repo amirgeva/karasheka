@@ -10,6 +10,7 @@
 #include <io.h>
 #endif
 
+#include "app/rawkeys.h"
 #include "gfx/art.h"
 
 namespace kara {
@@ -18,18 +19,25 @@ namespace {
 struct Layout {
     SDL_Scancode pad[9];  // keypad order: 1 2 3 4 5 6 7 8 9
     SDL_Scancode strike[2];
+    SDL_Scancode guard[2];
 };
 
+// No two layouts share a key, so any two can play on one keyboard; one
+// player can use all of them at once (left hand on Shift and Ctrl, right
+// hand on the numpad, say).
 const Layout kLayouts[kLayoutCount] = {
     {{SDL_SCANCODE_Z, SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D, SDL_SCANCODE_Q,
       SDL_SCANCODE_W, SDL_SCANCODE_E},
-     {SDL_SCANCODE_LSHIFT, SDL_SCANCODE_LCTRL}},
+     {SDL_SCANCODE_LSHIFT, SDL_SCANCODE_UNKNOWN},
+     {SDL_SCANCODE_LCTRL, SDL_SCANCODE_UNKNOWN}},
     {{SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_COMMA, SDL_SCANCODE_H, SDL_SCANCODE_J, SDL_SCANCODE_K,
       SDL_SCANCODE_Y, SDL_SCANCODE_U, SDL_SCANCODE_I},
-     {SDL_SCANCODE_SPACE, SDL_SCANCODE_RSHIFT}},
+     {SDL_SCANCODE_SPACE, SDL_SCANCODE_UNKNOWN},
+     {SDL_SCANCODE_L, SDL_SCANCODE_UNKNOWN}},
     {{SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_5,
       SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_9},
-     {SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_ENTER}},
+     {SDL_SCANCODE_RSHIFT, SDL_SCANCODE_KP_0},
+     {SDL_SCANCODE_RCTRL, SDL_SCANCODE_KP_ENTER}},
 };
 
 bool isEnter(SDL_Keycode k) { return k == SDLK_RETURN || k == SDLK_KP_ENTER; }
@@ -45,12 +53,16 @@ uint64_t freshSeed() {
 
 // Scales the frame to w x h with crisp pixels: each output pixel averages the
 // frame pixels its footprint covers, so non-integer scales stay sharp.
-// `cover` fills the whole output (cropping); otherwise it letterboxes.
-std::vector<uint8_t> scaleRGB(const Image& src, int w, int h, bool cover, bool bgra) {
+// `cover` fills the whole output (cropping); otherwise it letterboxes. A
+// crop that cuts the sides keeps frame column `focusX` in the middle (when
+// given), as far as the frame allows.
+std::vector<uint8_t> scaleRGB(const Image& src, int w, int h, bool cover, bool bgra, float focusX = -1.f) {
     std::vector<uint8_t> out(size_t(w) * size_t(h) * (bgra ? 4 : 3), 0);
     const float sx = float(w) / float(src.width()), sy = float(h) / float(src.height());
     const float s = cover ? std::max(sx, sy) : std::min(sx, sy);
-    const float ox = (float(w) - float(src.width()) * s) * 0.5f, oy = (float(h) - float(src.height()) * s) * 0.5f;
+    float ox = (float(w) - float(src.width()) * s) * 0.5f;
+    const float oy = (float(h) - float(src.height()) * s) * 0.5f;
+    if (cover && focusX >= 0.f && ox < 0.f) ox = std::clamp(float(w) * 0.5f - focusX * s, float(w) - float(src.width()) * s, 0.f);
     auto spans = [&](int X, float o, int n, int& i0, float& w0, int& i1, float& w1) {
         const float a = (float(X) - o) / s, b = (float(X + 1) - o) / s;
         i0 = int(std::floor(a));
@@ -104,8 +116,8 @@ std::vector<uint8_t> scaleRGB(const Image& src, int w, int h, bool cover, bool b
     return out;
 }
 
-bool saveBmp(const Image& img, int w, int h, bool cover, const std::string& path) {
-    std::vector<uint8_t> px = scaleRGB(img, w, h, cover, true);
+bool saveBmp(const Image& img, int w, int h, bool cover, const std::string& path, float focusX = -1.f) {
+    std::vector<uint8_t> px = scaleRGB(img, w, h, cover, true, focusX);
     SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormatFrom(px.data(), w, h, 32, w * 4, SDL_PIXELFORMAT_ARGB8888);
     const int saved = surf ? SDL_SaveBMP(surf, path.c_str()) : -1;
     if (surf) SDL_FreeSurface(surf);
@@ -178,6 +190,7 @@ bool Game::init(const Options& opt) {
         return false;
     }
     SDL_SetWindowMinimumSize(window_, kWorldW * 2, kWorldH * 2);
+    rawKeysInit(window_);
     renderer_ = SDL_CreateRenderer(window_, -1,
                                    SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
     if (!renderer_) renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE | SDL_RENDERER_TARGETTEXTURE);
@@ -247,12 +260,18 @@ int Game::runScreenshot(const Options& opt) {
         for (int i = 0; i < 60 * 600 && !done(); ++i) update(step);
         if (s == "pause") paused_ = true;
         if (s == "help") help_ = true;
-        if (s == "cover") cover_ = true;
+        if (s == "cover") {
+            // The part of the frame a narrower cover keeps, centred on the fight.
+            cover_ = true;
+            coverView_ = std::min(float(kWorldW), float(kWorldH) * float(opt.width) / float(opt.height));
+            const float mid = (match_->fighter(0).x + match_->fighter(1).x) * 0.5f;
+            coverFocus_ = std::clamp(mid, coverView_ * 0.5f, float(kWorldW) - coverView_ * 0.5f);
+        }
         std::fprintf(stderr, "screenshot: round %d, %.1f s, health %.0f / %.0f\n", match_->round(),
                      double(match_->clock()), double(match_->fighter(0).health), double(match_->fighter(1).health));
     }
     drawFrame();
-    return saveBmp(frame_, opt.width, opt.height, cover_, opt.screenshot) ? 0 : 1;
+    return saveBmp(frame_, opt.width, opt.height, cover_, opt.screenshot, cover_ ? coverFocus_ : -1.f) ? 0 : 1;
 }
 
 // Matches are deterministic, so seeds can be auditioned headlessly: the one
@@ -401,18 +420,22 @@ bool Game::anyHuman() const { return match_ && (!match_->isCpu(0) || !match_->is
 
 Input Game::readLayout(int layout) const {
     const Uint8* ks = SDL_GetKeyboardState(nullptr);
+    auto held = [ks](SDL_Scancode sc) { return sc != SDL_SCANCODE_UNKNOWN && keyHeld(ks, sc); };
     bool key[10] = {};
-    bool strike = false;
+    bool strike = false, guard = false;
     for (int l = 0; l < kLayoutCount; ++l) {
         if (layout != kLayoutAny && layout != l) continue;
-        for (int k = 0; k < 9; ++k) key[k + 1] = key[k + 1] || ks[kLayouts[l].pad[k]] != 0;
-        strike = strike || ks[kLayouts[l].strike[0]] || ks[kLayouts[l].strike[1]];
+        const Layout& lay = kLayouts[l];
+        for (int k = 0; k < 9; ++k) key[k + 1] = key[k + 1] || held(lay.pad[k]);
+        strike = strike || held(lay.strike[0]) || held(lay.strike[1]);
+        guard = guard || held(lay.guard[0]) || held(lay.guard[1]);
     }
     Input in;
     in.dx = int(key[3] || key[6] || key[9]) - int(key[1] || key[4] || key[7]);
     in.dy = int(key[1] || key[2] || key[3]) - int(key[7] || key[8] || key[9]);
     in.center = key[5];
     in.strike = strike;
+    in.guard = guard;
     return in;
 }
 
@@ -432,6 +455,8 @@ void Game::handleEvent(const SDL_Event& e) {
             onKeyDown(e.key.keysym.sym, e.key.repeat != 0);
             break;
         case SDL_WINDOWEVENT:
+            if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) rawKeysFocus(true);
+            if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) rawKeysFocus(false);
             if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST && scene_ == Scene::Play && anyHuman() && match_ &&
                 match_->phase() != Phase::MatchOver) {
                 paused_ = true;

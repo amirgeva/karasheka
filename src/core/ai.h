@@ -20,11 +20,14 @@ private:
         int delay;         // frames of perception lag
         int think;         // frames between decisions
         float defend;      // chance to guard an attack it sees coming
+        float read;        // chance that guard is at the right level
         float antiAir;     // chance to meet a jump-in with an uppercut
         float aggression;  // chance to attack when in range
         float slop;        // error in its range judgement, px
         float punish;      // chance to punish a whiffed move
         float climb;       // chance to go for the furniture
+        float air;         // chance that a jump is meant to attack
+        float flashy;      // how much it favours the knockdowns (flying kick, sweep, roundhouse)
     };
 
     Input attack(Move m, int facing);
@@ -46,6 +49,8 @@ private:
     int seenAttack_ = -1;  // the opponent attack it already reacted to (tick it started)
     int seenJump_ = -1;    // the opponent jump it already judged
     bool antiAirPlan_ = false;
+    bool airPlan_ = false;      // this jump is meant to attack
+    bool wasAirborne_ = false;
     int goal_ = -1;        // furniture it is heading for
     int goalTicks_ = 0;
     int perch_ = 0;        // ticks spent up on furniture

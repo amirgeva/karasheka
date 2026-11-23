@@ -3,13 +3,14 @@
 namespace kara {
 
 // One fighter's controls for one tick: nine keys laid out like a numeric
-// keypad (7 8 9 / 4 5 6 / 1 2 3) plus the strike modifier. Holding two keys
-// combines them, so 4 + 8 works like 7.
+// keypad (7 8 9 / 4 5 6 / 1 2 3) plus two modifiers, strike and guard.
+// Holding two keys combines them, so 4 + 8 works like 7.
 struct Input {
     int dx = 0;           // -1 left, 0, +1 right (screen directions)
     int dy = 0;           // -1 up, 0, +1 down
     bool center = false;  // the middle key (5) is held
     bool strike = false;  // the strike modifier is held
+    bool guard = false;   // the guard modifier is held: up, level or down picks the guard
 
     // Keypad number of what is held: 1-9, with 5 only when the middle key is
     // held on its own, and 0 when no direction key is held at all.
@@ -29,7 +30,7 @@ struct Input {
     }
 
     bool operator==(const Input& o) const {
-        return dx == o.dx && dy == o.dy && center == o.center && strike == o.strike;
+        return dx == o.dx && dy == o.dy && center == o.center && strike == o.strike && guard == o.guard;
     }
     bool operator!=(const Input& o) const { return !(*this == o); }
 };

@@ -30,7 +30,13 @@ constexpr float kDiveVx = 150.f;
 constexpr float kDiveVy = 290.f;
 constexpr float kMaxHealth = 100.f;
 constexpr float kPushWidth = 20.f;  // fighters' bodies keep this far apart
-constexpr float kElevation = 14.f;  // height gap that turns attacks overhead (or low)
+constexpr float kElevation = 14.f;  // height gap that turns attacks high (or low)
+// Keys pressed this many ticks apart still count as one chord: 8 then strike
+// is an uppercut, strike then 6 a front kick, 2, 6 then strike a sweep.
+constexpr int kChordFrames = 4;
+// Every strike that can reach a fighter on the floor takes at least this long
+// to land (200 ms), so a good player can see it coming and guard.
+constexpr int kMinStrikeFrames = 12;
 
 // ---------------------------------------------------------------- moves
 
@@ -40,9 +46,13 @@ enum class Move : int {
 };
 constexpr int kMoveCount = int(Move::Count);
 
-// How an attack has to be guarded: Mid by either guard, Low only crouching,
-// Overhead only standing.
-enum class Level { Mid, Low, Overhead };
+// Where an attack lands, and so which guard stops it: guard with up for High,
+// guard (or 5) alone for Mid, guard with down for Low. Only the matching guard
+// blocks. Attacks from well above are High, from well below Low.
+enum class Level { Mid, Low, High };
+
+// The guard level that input asks for: guard + up, guard (or 5) alone, guard + down.
+inline Level guardLevel(const Input& in) { return in.dy < 0 ? Level::High : (in.dy > 0 ? Level::Low : Level::Mid); }
 enum class Striker { FrontHand, BackHand, FrontFoot, BackFoot };
 
 struct MoveInfo {
@@ -95,11 +105,13 @@ struct Fighter {
     bool airborne = false;
     int support = -1;  // furniture stood on, -1 = the floor
     float peakY = 0.f;  // highest point since leaving the ground
+    int airFrames = 0;  // ticks since leaving the ground
     bool airAttack = false;  // already attacked during this jump
     int stun = 0;       // Hit / Block / Land: frames until free
-    bool crouchBlock = false;
+    Level guard = Level::Mid;  // Guard / Block: which level is covered
     bool lowHit = false;  // hit while crouching
     int rollDir = 0;
+    float rollX = 0.f;  // where the roll began (a strike chorded into it starts there)
     int jumpDx = 0;     // direction chosen when the jump began
     float walkPhase = 0.f;
     bool ko = false;
@@ -161,6 +173,7 @@ struct Snapshot {
     bool airborne = false;
     int support = -1;
     float health = kMaxHealth;
+    Level guard = Level::Mid;
 };
 
 class Match {
@@ -213,6 +226,7 @@ private:
 
     void stepFighter(int i, const Input& in);
     void neutral(Fighter& f, const Fighter& o, int pad, int prevPad);
+    void startGuard(Fighter& f, Level level);
     void face(Fighter& f, const Fighter& o);
     void startMove(Fighter& f, Move m);
     void stepAttack(Fighter& f);

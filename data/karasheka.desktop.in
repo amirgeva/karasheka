@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Karasheka
+GenericName=Karate Game
+Comment=Retro karate in the apartment: leap onto the furniture and dive kick
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/karasheka
+Icon=karasheka
+Terminal=false
+Categories=Game;ActionGame;
+Keywords=karate;fighting;martial arts;retro;arcade;multiplayer;
+StartupNotify=false
+SingleMainWindow=true

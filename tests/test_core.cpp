@@ -3,6 +3,8 @@
 //
 // Usage: kara_tests [matches]   (CPU matches to play per pairing, default 6)
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -88,6 +90,13 @@ void testInput() {
     chord.dx = -1;
     chord.dy = -1;
     CHECK(chord.pad() == 7, "4+8 should act as 7");
+    Input g;
+    g.guard = true;
+    CHECK(guardLevel(g) == Level::Mid && g.pad() == 0, "guard alone: the middle guard, no direction");
+    g.dy = -1;
+    CHECK(guardLevel(g) == Level::High, "guard + up: high");
+    g.dy = 1;
+    CHECK(guardLevel(g) == Level::Low, "guard + down: low");
     CHECK(Input{}.pad() == 0, "nothing held");
     CHECK(moveFor(6, 1, false) == Move::FrontKick && moveFor(4, -1, false) == Move::FrontKick, "toward = front kick");
     CHECK(moveFor(4, 1, false) == Move::Roundhouse && moveFor(6, -1, false) == Move::Roundhouse, "away = roundhouse");
@@ -122,6 +131,66 @@ void testSkeleton() {
     CHECK(kFloorY - lying.top < 16.f, "lying flat (%.1f tall)", double(kFloorY - lying.top));
 }
 
+// The guard key, with up or down for the high or low guard.
+Input guardIn(Level level) {
+    Input in;
+    in.guard = true;
+    in.dy = level == Level::High ? -1 : (level == Level::Low ? 1 : 0);
+    return in;
+}
+
+const char* levelName(Level l) { return l == Level::High ? "high" : (l == Level::Low ? "low" : "mid"); }
+
+// Keys held for one tick, written as keypad digits plus S (strike) and G (guard).
+Input keys(const char* k) {
+    bool key[10] = {};
+    Input in;
+    for (; *k; ++k) {
+        if (*k == 'S') in.strike = true;
+        else if (*k == 'G') in.guard = true;
+        else if (*k >= '1' && *k <= '9') key[*k - '0'] = true;
+    }
+    in.dx = int(key[3] || key[6] || key[9]) - int(key[1] || key[4] || key[7]);
+    in.dy = int(key[1] || key[2] || key[3]) - int(key[7] || key[8] || key[9]);
+    in.center = key[5];
+    return in;
+}
+
+struct Step {
+    const char* keys;
+    int ticks;
+};
+
+// Plays RED's key steps (BLUE far away and idle), then keeps holding the
+// last keys; returns the attack RED is committed to once the chord window
+// has passed, or Move::None.
+Move chordMove(std::initializer_list<Step> steps) {
+    Duel d(90.f);
+    Move committed = Move::None;
+    const char* last = "";
+    auto tick = [&](const char* k) {
+        d.run(1, keys(k));
+        const Fighter& f = d.f(0);
+        if (committed == Move::None && f.act == Act::Attack && f.frame == kChordFrames + 1) committed = f.move;
+    };
+    for (const Step& st : steps) {
+        for (int i = 0; i < st.ticks; ++i) tick(st.keys);
+        last = st.keys;
+    }
+    for (int i = 0; i < 40; ++i) tick(last);
+    return committed;
+}
+
+// Ticks from RED's first input to the hit landing on BLUE (-1: it never
+// does). script[i] is RED's input on tick i; after it RED holds `then`.
+int timeToHit(Duel& d, const std::vector<Input>& script, Input then, Input blue = Input{}, int limit = 90) {
+    for (int i = 0; i < limit; ++i) {
+        d.run(1, i < int(script.size()) ? script[size_t(i)] : then, blue);
+        if (d.f(1).health < kMaxHealth) return i;
+    }
+    return -1;
+}
+
 void testHits() {
     std::printf("hits and guards\n");
     {
@@ -132,18 +201,8 @@ void testHits() {
     {
         Duel d(26.f);
         d.attack(5, pad(5));
-        CHECK(d.f(1).health == kMaxHealth, "guard blocks a punch (health %.0f)", double(d.f(1).health));
-    }
-    {
-        Duel d(28.f);
-        d.attack(3, pad(5), 40);
-        CHECK(d.f(1).health < kMaxHealth, "guard does not stop a sweep (health %.0f)", double(d.f(1).health));
-        CHECK(d.f(1).act == Act::Fall || d.f(1).act == Act::Down, "a sweep floors you (act %d)", int(d.f(1).act));
-    }
-    {
-        Duel d(28.f);
-        d.attack(3, pad(2));
-        CHECK(d.f(1).health == kMaxHealth, "crouching blocks a sweep (health %.0f)", double(d.f(1).health));
+        CHECK(d.f(1).health == kMaxHealth, "5 on its own guards mid and blocks a punch (health %.0f)",
+              double(d.f(1).health));
     }
     {
         Duel d(26.f);
@@ -154,39 +213,66 @@ void testHits() {
               countEvents(ev, EventType::Block));
     }
     {
-        Duel d(26.f);
-        d.attack(4, Input{});
-        CHECK(d.f(1).health < kMaxHealth, "roundhouse hits a standing fighter (health %.0f)", double(d.f(1).health));
-    }
-    {
-        Duel d(26.f);
-        d.attack(6, pad(2));
-        CHECK(d.f(1).health == kMaxHealth, "crouching blocks a front kick (health %.0f)", double(d.f(1).health));
-    }
-    {
         Duel d(30.f);
-        d.attack(2, Input{});
-        CHECK(d.f(1).health < kMaxHealth, "low kick hits (health %.0f)", double(d.f(1).health));
+        d.attack(2, pad(2));
+        CHECK(d.f(1).health < kMaxHealth, "crouching alone does not block a low kick (health %.0f)",
+              double(d.f(1).health));
     }
     {
-        // A jump-in air kick against a crouching guard: an overhead.
+        Duel d(28.f);
+        d.attack(3, Input{}, 40);
+        CHECK(d.f(1).act == Act::Fall || d.f(1).act == Act::Down, "a sweep floors you (act %d)", int(d.f(1).act));
+    }
+
+    // Each strike is blocked by exactly one guard: its own level.
+    const struct {
+        int pad;
+        Move move;
+    } strikes[] = {{5, Move::Punch},   {6, Move::FrontKick}, {4, Move::Roundhouse}, {8, Move::Uppercut},
+                   {1, Move::LowPunch}, {2, Move::LowKick},   {3, Move::Sweep}};
+    for (const auto& c : strikes) {
+        const char* name = moveInfo(c.move).name;
+        float gap = -1.f;
+        for (float g = 14.f; g <= 44.f && gap < 0.f; g += 2.f) {
+            Duel d(g);
+            d.attack(c.pad, Input{});
+            if (d.f(1).health < kMaxHealth) gap = g;
+        }
+        if (c.move == Move::Uppercut && gap < 0.f) continue;  // an anti-air: may pass over a standing head
+        CHECK(gap > 0.f, "%s lands on a standing fighter at some distance", name);
+        if (gap < 0.f) continue;
+        for (int l = 0; l < 3; ++l) {
+            Duel d(gap);
+            d.attack(c.pad, guardIn(Level(l)));
+            const bool blocked = d.f(1).health == kMaxHealth;
+            const bool should = Level(l) == moveInfo(c.move).level;
+            CHECK(blocked == should, "%s at %.0f px against the %s guard: %s", name, double(gap), levelName(Level(l)),
+                  blocked ? "blocked" : "hit");
+        }
+    }
+
+    // A jump-in air kick lands high: the high guard stops it, the low one does not.
+    for (int l = 0; l < 3; ++l) {
         Duel d(58.f);
-        d.run(4, Input{}, pad(2));
-        d.run(1, pad(9), pad(2));
+        const Input g = guardIn(Level(l));
+        d.run(4, Input{}, g);
+        d.run(1, pad(9), g);
         int t = 0;
-        while (d.f(0).act != Act::Air && t++ < 10) d.run(1, pad(9), pad(2));
+        while (d.f(0).act != Act::Air && t++ < 10) d.run(1, pad(9), g);
         bool struck = false;
         for (int i = 0; i < 60 && d.f(0).airborne; ++i) {
             const float ahead = (d.f(1).x - d.f(0).x);
-            if (!struck && ahead < 28.f && d.f(0).vy > -120.f) {
-                d.run(1, pad(6, true), pad(2));
+            if (!struck && ahead < 30.f && d.f(0).vy > -120.f) {
+                d.run(1, pad(6, true), g);
                 struck = true;
             } else {
-                d.run(1, Input{}, pad(2));
+                d.run(1, Input{}, g);
             }
         }
+        const bool blocked = d.f(1).health == kMaxHealth;
         CHECK(struck, "air kick was pressed");
-        CHECK(d.f(1).health < kMaxHealth, "air kick beats a crouching guard (health %.0f)", double(d.f(1).health));
+        CHECK(blocked == (Level(l) == Level::High), "jump-in air kick against the %s guard: %s", levelName(Level(l)),
+              blocked ? "blocked" : "hit");
     }
     {
         Duel d(40.f);
@@ -195,6 +281,163 @@ void testHits() {
         CHECK(d.f(0).x > d.f(1).x, "rolling forward passes the opponent (%.0f vs %.0f)", double(d.f(0).x),
               double(d.f(1).x));
     }
+}
+
+// Keys meant together but pressed a few ticks apart, in either order.
+void testChords() {
+    std::printf("chords\n");
+    auto expect = [](Move got, Move want, const char* what, int gap) {
+        CHECK(got == want, "%s, %d ticks apart: got %s, want %s", what, gap, moveInfo(got).name, moveInfo(want).name);
+    };
+    for (int g = 0; g <= kChordFrames; ++g) {
+        auto first = [g](const char* a, const char* b) {
+            return g == 0 ? chordMove({{b, 1}}) : chordMove({{a, g}, {b, 1}});
+        };
+        expect(first("6", "6S"), Move::FrontKick, "6 then strike", g);
+        expect(first("S", "6S"), Move::FrontKick, "strike then 6", g);
+        expect(first("8", "8S"), Move::Uppercut, "8 then strike", g);
+        expect(first("S", "8S"), Move::Uppercut, "strike then 8", g);
+        expect(first("9", "9S"), Move::FlyingKick, "9 then strike", g);
+        expect(first("S", "9S"), Move::FlyingKick, "strike then 9", g);
+        expect(first("3", "3S"), Move::Sweep, "3 then strike", g);
+        expect(first("1", "1S"), Move::LowPunch, "1 then strike", g);
+        expect(first("S", "2S"), Move::LowKick, "strike then 2", g);
+        // Diagonals built from two keys: hold one, then the other with strike.
+        expect(g == 0 ? chordMove({{"6", 3}, {"68S", 1}}) : chordMove({{"6", 3}, {"68", g}, {"68S", 1}}),
+               Move::FlyingKick, "6, 8 then strike", g);
+        expect(g == 0 ? chordMove({{"4", 3}, {"48S", 1}}) : chordMove({{"4", 3}, {"48", g}, {"48S", 1}}),
+               Move::Backflip, "4, 8 then strike", g);
+        expect(g == 0 ? chordMove({{"2", 3}, {"26S", 1}}) : chordMove({{"2", 3}, {"26", g}, {"26S", 1}}), Move::Sweep,
+               "2, 6 then strike", g);
+        expect(g == 0 ? chordMove({{"2", 3}, {"24S", 1}}) : chordMove({{"2", 3}, {"24", g}, {"24S", 1}}),
+               Move::LowPunch, "2, 4 then strike", g);
+    }
+    // Letting go of one key of a chord early is not a new direction.
+    expect(chordMove({{"26S", 2}, {"6S", 4}, {"", 1}}), Move::Sweep, "2+6+strike, then 2 let go early", 2);
+    expect(chordMove({{"8S", 2}, {"S", 4}, {"", 1}}), Move::Uppercut, "8+strike, then 8 let go early", 2);
+    {
+        // A strike waiting for the air delay is dropped if the fighter lands
+        // first, rather than coming out on the ground.
+        Duel d(90.f);
+        Fighter& f = d.m.fighterForTest(0);
+        f.y = kFloorY - 3.f;
+        f.airborne = true;
+        f.support = -1;
+        f.peakY = f.y;
+        f.vx = f.vy = 0.f;
+        f.act = Act::Air;
+        f.frame = 0;
+        f.airFrames = 0;
+        f.airAttack = false;
+        d.m.refresh(f);
+        bool attacked = false;
+        d.run(1, keys("2S"));
+        for (int i = 0; i < 30; ++i) {
+            d.run(1, Input{});
+            attacked = attacked || d.f(0).act == Act::Attack;
+        }
+        CHECK(!attacked, "a dive pressed just before a short drop lands does not turn into a low kick");
+    }
+    // Too far apart: two separate actions.
+    expect(chordMove({{"S", kChordFrames + 2}, {"6S", 1}}), Move::Punch, "strike, then 6 much later", kChordFrames + 2);
+    expect(chordMove({{"8", kChordFrames + 2}, {"8S", 1}}), Move::AirKick, "8, then strike much later",
+           kChordFrames + 2);
+    {
+        // A strike chorded into a roll starts where the roll began.
+        Duel d(90.f);
+        const float x0 = d.f(0).x;
+        d.run(3, keys("2"));
+        d.run(2, keys("26"));
+        d.run(1, keys("26S"));
+        CHECK(d.f(0).act == Act::Attack && d.f(0).move == Move::Sweep && std::fabs(d.f(0).x - x0) < 0.5f,
+              "2, 6, strike sweeps from the spot (act %d, moved %.1f px)", int(d.f(0).act), double(d.f(0).x - x0));
+    }
+    // The guard key chords the same way.
+    for (int g = 0; g <= kChordFrames; ++g) {
+        auto guardAfter = [g](const char* a, const char* b, Level want, const char* what) {
+            Duel d(90.f);
+            const float x0 = d.f(0).x;
+            if (g > 0) d.run(g, keys(a));
+            d.run(3, keys(b));
+            const Fighter& f = d.f(0);
+            CHECK(f.act == Act::Guard && f.guard == want && !f.airborne && std::fabs(f.x - x0) < 0.5f,
+                  "%s, %d ticks apart: act %d, %s guard, airborne %d, moved %.1f", what, g, int(f.act),
+                  levelName(f.guard), int(f.airborne), double(f.x - x0));
+        };
+        guardAfter("8", "8G", Level::High, "8 then guard");
+        guardAfter("G", "8G", Level::High, "guard then 8");
+        guardAfter("2", "2G", Level::Low, "2 then guard");
+        guardAfter("3", "3G", Level::Low, "3 then guard");
+        guardAfter("G", "5G", Level::Mid, "guard then 5");
+    }
+}
+
+// Every strike that can reach a fighter on the floor takes at least
+// kMinStrikeFrames to land, and a guard pressed in that time stops it.
+void testStrikeTiming() {
+    std::printf("strike timing\n");
+    auto atLeast = [](int t, const char* what, float gap) {
+        if (t >= 0)
+            CHECK(t >= kMinStrikeFrames, "%s at %.0f px lands after %d ticks (min %d)", what, double(gap), t,
+                  kMinStrikeFrames);
+    };
+    const struct {
+        int pad;
+        Move move;
+    } ground[] = {{5, Move::Punch},    {6, Move::FrontKick}, {4, Move::Roundhouse}, {8, Move::Uppercut},
+                  {1, Move::LowPunch}, {2, Move::LowKick},   {3, Move::Sweep},      {9, Move::FlyingKick},
+                  {7, Move::Backflip}};
+    for (const auto& c : ground) {
+        int fastest = 1000;
+        for (float g = 6.f; g <= 90.f; g += 2.f) {
+            Duel d(g);
+            d.run(4, Input{});
+            const int t = timeToHit(d, {pad(c.pad, true)}, Input{});
+            atLeast(t, moveInfo(c.move).name, g);
+            if (t < 0) continue;
+            fastest = std::min(fastest, t);
+            // The right guard, pressed as late as the tick it lands, blocks it.
+            Duel b(g);
+            b.run(4, Input{});
+            for (int i = 0; i < 60; ++i) b.run(1, i == 0 ? pad(c.pad, true) : Input{}, i >= t ? guardIn(moveInfo(c.move).level) : Input{});
+            CHECK(b.f(1).health == kMaxHealth, "%s at %.0f px: the %s guard pressed on tick %d blocks it",
+                  moveInfo(c.move).name, double(g), levelName(moveInfo(c.move).level), t);
+        }
+        if (fastest < 1000) std::printf("    %-14s lands %d ticks (%d ms) after the press at the earliest\n",
+                                        moveInfo(c.move).name, fastest, fastest * 1000 / 60);
+    }
+    // Jump-ins: up (or up-forward) to jump, then strike as early as possible.
+    for (const char* jumpKeys : {"8", "9"}) {
+        for (const char* strikeKeys : {"S", "6S", "2S"}) {
+            for (float g = 8.f; g <= 80.f; g += 2.f) {
+                Duel d(g);
+                d.run(4, Input{});
+                std::vector<Input> script(size_t(kChordFrames + 1), keys(jumpKeys));
+                const int t = timeToHit(d, script, keys(strikeKeys));
+                char what[32];
+                std::snprintf(what, sizeof what, "jump %s, then %s", jumpKeys, strikeKeys);
+                atLeast(t, what, g);
+            }
+        }
+    }
+    // Stepping off something high and diving at once.
+    for (float h = 20.f; h <= 60.f; h += 10.f)
+        for (float g = 4.f; g <= 40.f; g += 4.f) {
+            Duel d(g);
+            Fighter& f = d.m.fighterForTest(0);
+            f.y = kFloorY - h;
+            f.airborne = true;
+            f.support = -1;
+            f.peakY = f.y;
+            f.vx = f.vy = 0.f;
+            f.act = Act::Air;
+            f.frame = 0;
+            f.airFrames = 0;
+            f.airAttack = false;
+            d.m.refresh(f);
+            const int t = timeToHit(d, {}, keys("2S"));
+            atLeast(t, "a dive straight off a ledge", g);
+        }
 }
 
 void testFurniture() {
@@ -260,6 +503,7 @@ void testFurniture() {
 struct Stats {
     std::map<std::string, int> hits;
     int blocks = 0, perches = 0, breaks = 0, kos = 0, rounds = 0, timeouts = 0;
+    int rollChain = 0;  // most rolls one fighter strung back to back
     long swings = 0, fightTicks = 0, perchTicks = 0, closeTicks = 0, guardTicks = 0, airTicks = 0;
     std::map<std::string, int> tries;
 };
@@ -272,8 +516,19 @@ int playMatch(Control a, Control b, uint64_t seed, Stats& st, float* seconds = n
     s.roundTime = 60;
     s.seed = seed;
     Match m(s);
+    std::array<Act, 2> prevAct{{Act::Intro, Act::Intro}};
+    std::array<int, 2> rollEnd{{-100, -100}}, chain{{0, 0}};
     for (int t = 0; t < 60 * 60 * 6; ++t) {
         m.tick();
+        for (int i = 0; i < 2; ++i) {
+            const Act act = m.fighter(i).act;
+            if (prevAct[size_t(i)] == Act::Roll && act != Act::Roll) rollEnd[size_t(i)] = t;
+            if (act == Act::Roll && prevAct[size_t(i)] != Act::Roll) {
+                chain[size_t(i)] = t - rollEnd[size_t(i)] <= 2 ? chain[size_t(i)] + 1 : 1;
+                st.rollChain = std::max(st.rollChain, chain[size_t(i)]);
+            }
+            prevAct[size_t(i)] = act;
+        }
         if (m.phase() == Phase::Fight) {
             ++st.fightTicks;
             for (int i = 0; i < 2; ++i) {
@@ -319,7 +574,11 @@ Stats statsFor(Control a, Control b, int count, uint64_t seed0) {
     std::printf("  %s vs %s\n", controlName(a), controlName(b));
     std::printf("    %d matches, %d rounds, %.0f s average, %d KOs, %d time-outs\n", count, st.rounds,
                 double(total / float(count)), st.kos, st.timeouts);
-    std::printf("    blocks %d, landings on furniture %d, furniture broken %d\n", st.blocks, st.perches, st.breaks);
+    std::printf("    blocks %d, landings on furniture %d, furniture broken %d, longest roll chain %d\n", st.blocks,
+                st.perches, st.breaks, st.rollChain);
+    // A fresh decision may roll straight back out of a corner, but a roll
+    // must not keep repeating itself (it once chained 5-21 times).
+    CHECK(st.rollChain <= 2, "a CPU strung %d rolls back to back", st.rollChain);
     const double ft = double(std::max(1L, st.fightTicks));
     std::printf("    swings %ld; per fighter: perched %.0f%%, guarding %.0f%%, airborne %.0f%%; close %.0f%% of the time\n",
                 st.swings, 50.0 * double(st.perchTicks) / ft, 50.0 * double(st.guardTicks) / ft,
@@ -362,6 +621,120 @@ void testMatches(int count) {
     CHECK(hardWins > easyWins, "hard beats easy more often (%d vs %d)", hardWins, easyWins);
 }
 
+// A stand-in for a beginner at the keyboard, playing through the same keys:
+// slow to react (about 370 ms), presses simple attacks when close, rarely
+// guards and then often at the wrong height, jumps now and then, and pays no
+// attention to the furniture.
+class Novice {
+public:
+    explicit Novice(uint64_t seed) : rng_(seed) {}
+
+    Input think(const Match& m, int self) {
+        const Fighter& me = m.fighter(self);
+        const Snapshot& op = m.seen(1 - self, kReaction);
+        const float dx = op.x - me.x, dist = std::fabs(dx);
+        const int toward = dx >= 0.f ? 1 : -1;
+        // An attack seen coming: sometimes a guard, a coin toss which one.
+        if (op.act == Act::Attack && op.move != Move::None) {
+            const int started = m.ticks() - kReaction - op.frame;
+            if (started != seenAttack_) {
+                seenAttack_ = started;
+                if (dist < 50.f && rng_.uniform() < 0.3f) {
+                    const Level l = rng_.uniform() < 0.5f ? moveInfo(op.move).level : Level(rng_.below(3));
+                    set(guardIn(l), rng_.range(15, 30));
+                }
+            }
+        }
+        if (hold_ > 0) {
+            --hold_;
+            return held_;
+        }
+        held_ = Input{};
+        if (me.airborne) {
+            if (dist < 34.f && rng_.uniform() < 0.08f) set(pad(5, true), 2);
+            return held_;
+        }
+        if (--wait_ > 0) return held_;
+        wait_ = rng_.range(10, 22);
+        const float r = rng_.uniform();
+        if (dist > 38.f) {
+            if (r < 0.06f) set(keys(toward > 0 ? "9" : "7"), 3);
+            else set(pad(toward > 0 ? 6 : 4), wait_);
+        } else if (r < 0.55f) {
+            const float a = rng_.uniform();
+            const int fwd = me.facing > 0 ? 6 : 4, back = me.facing > 0 ? 4 : 6;
+            const int p = a < 0.3f ? 5 : a < 0.55f ? fwd : a < 0.7f ? 2 : a < 0.85f ? back : (fwd == 6 ? 3 : 1);
+            set(pad(p, true), 2);
+        } else if (r < 0.7f) {
+            set(guardIn(Level(rng_.below(3))), rng_.range(15, 30));
+        } else if (r < 0.85f) {
+            set(pad(toward > 0 ? 4 : 6), 10);
+        }
+        return held_;
+    }
+
+private:
+    static constexpr int kReaction = 22;
+    void set(Input in, int ticks) {
+        held_ = in;
+        hold_ = ticks;
+    }
+    Rng rng_;
+    Input held_;
+    int hold_ = 0, wait_ = 0, seenAttack_ = -1;
+};
+
+// A whole match of the novice (RED) against a computer: the winner, and the
+// novice's health lead summed over the rounds.
+int playNovice(Control cpu, uint64_t seed, float& noviceLead) {
+    MatchSetup s;
+    s.control = {{Control::Human, cpu}};
+    s.rounds = 3;
+    s.roundTime = 60;
+    s.seed = seed;
+    Match m(s);
+    Novice n(hash64(seed, 99));
+    noviceLead = 0.f;
+    for (int t = 0; t < 60 * 60 * 6; ++t) {
+        m.setInput(0, n.think(m, 0));
+        m.tick();
+        for (const Event& e : m.takeEvents())
+            if (e.type == EventType::RoundOver) noviceLead += m.fighter(0).health - m.fighter(1).health;
+        if (m.phase() == Phase::MatchOver) return m.matchWinner();
+    }
+    return -2;
+}
+
+// How each computer level fares against a beginner: Easy should lose to
+// one, Hard should beat one, and each level should be harder than the last.
+void testLadder(int count) {
+    std::printf("against a beginner\n");
+    const int n = count * 4;
+    int noviceWins[3] = {};
+    float lead[3] = {};
+    for (int level = 0; level < 3; ++level) {
+        const Control cpu = Control(int(Control::CpuEasy) + level);
+        int novice = 0, comp = 0, draws = 0;
+        float margin = 0.f;
+        for (int i = 0; i < n; ++i) {
+            float h = 0.f;
+            const int w = playNovice(cpu, 7000u + uint64_t(i), h);
+            margin += h;
+            if (w == 0) ++novice;
+            else if (w == 1) ++comp;
+            else ++draws;
+        }
+        noviceWins[level] = novice;
+        lead[level] = margin / float(n * 2);
+        std::printf("    %-10s beginner wins %2d of %d, computer %2d, draws %d; beginner's health lead per round %+.0f\n",
+                    controlName(cpu), novice, n, comp, draws, double(lead[level]));
+    }
+    CHECK(noviceWins[0] * 10 >= n * 8, "a beginner beats Easy in most matches (%d of %d)", noviceWins[0], n);
+    CHECK(noviceWins[2] * 10 <= n * 2, "Hard beats a beginner in most matches (beginner wins %d of %d)", noviceWins[2], n);
+    CHECK(lead[0] > lead[1] && lead[1] > lead[2], "each level is harder than the last (leads %+.0f, %+.0f, %+.0f)",
+          double(lead[0]), double(lead[1]), double(lead[2]));
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -385,8 +758,11 @@ int main(int argc, char** argv) {
     testInput();
     testSkeleton();
     testHits();
+    testChords();
+    testStrikeTiming();
     testFurniture();
     testMatches(matches);
+    testLadder(matches);
     if (g_failures) {
         std::printf("%d check(s) failed\n", g_failures);
         return 1;

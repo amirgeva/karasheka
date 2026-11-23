@@ -8,7 +8,7 @@
 namespace kara {
 namespace {
 
-constexpr int kPreJumpFrames = 3;
+constexpr int kPreJumpFrames = kChordFrames;  // a strike in this time makes it a jump attack
 constexpr int kLandFrames = 4;
 constexpr int kDownFrames = 44;
 constexpr int kGetUpFrames = 24;
@@ -23,17 +23,17 @@ using P = PoseId;
 const MoveInfo kMoves[kMoveCount] = {
     // name          start act rec  striker             hitR  level            dmg  hstun bstun push  kd     air    chamber             strike             finish            crch   lunge jumpVx jumpVy lag
     {"",               0,   0,  0, Striker::FrontHand, 0.f,  Level::Mid,      0.f,  0,   0,    0.f, false, false, P::Stance,          P::Stance,         P::Stance,        false,  0.f,   0.f,    0.f,  0},
-    {"PUNCH",          5,   3,  9, Striker::BackHand,  3.5f, Level::Mid,      6.f, 14,  10,   70.f, false, false, P::PunchChamber,    P::PunchStrike,    P::PunchStrike,   false, 50.f,   0.f,    0.f,  0},
-    {"FRONT KICK",     8,   4, 13, Striker::FrontFoot, 4.f,  Level::Mid,      9.f, 17,  12,  110.f, false, false, P::FrontChamber,    P::FrontStrike,    P::FrontFinish,   false, 30.f,   0.f,    0.f,  0},
-    {"ROUNDHOUSE",    12,   4, 18, Striker::BackFoot,  5.f,  Level::Mid,     14.f,  0,  14,  150.f, true,  false, P::RoundChamber,    P::RoundStrike,    P::RoundFinish,   false, 45.f,   0.f,    0.f,  0},
-    {"UPPERCUT",       6,   5, 16, Striker::FrontHand, 4.f,  Level::Mid,     11.f,  0,  12,   60.f, true,  false, P::UpperChamber,    P::UpperStrike,    P::UpperFinish,   false, 20.f,   0.f,    0.f,  0},
-    {"LOW PUNCH",      4,   3,  8, Striker::FrontHand, 3.5f, Level::Mid,      5.f, 12,   9,   60.f, false, false, P::LowPunchChamber, P::LowPunchStrike, P::LowPunchStrike, true,  0.f,   0.f,    0.f,  0},
-    {"LOW KICK",       6,   3, 11, Striker::FrontFoot, 4.f,  Level::Low,      7.f, 15,  10,   80.f, false, false, P::LowKickChamber,  P::LowKickStrike,  P::LowKickStrike, true,   0.f,   0.f,    0.f,  0},
-    {"SWEEP",         10,   5, 20, Striker::BackFoot,  4.5f, Level::Low,     10.f,  0,  14,   60.f, true,  false, P::SweepChamber,    P::SweepStrike,    P::SweepFinish,   true,  25.f,   0.f,    0.f,  0},
-    {"FLYING KICK",    7,  90,  0, Striker::FrontFoot, 4.5f, Level::Overhead,12.f,  0,  14,  140.f, true,  true,  P::FlyChamber,      P::FlyStrike,      P::FlyStrike,     false,  0.f, 115.f, -215.f, 10},
-    {"BACKFLIP KICK",  4,   8,  0, Striker::FrontFoot, 4.5f, Level::Mid,      9.f,  0,  12,  120.f, true,  true,  P::FlipChamber,     P::FlipStrike,     P::FlipStrike,    false,  0.f, -90.f, -260.f,  6},
-    {"AIR KICK",       4,  90,  0, Striker::FrontFoot, 4.5f, Level::Overhead, 9.f, 18,  12,  100.f, false, true,  P::Tuck,            P::AirKick,        P::AirKick,       false,  0.f,   0.f,    0.f,  5},
-    {"DIVE KICK",      3,  90,  0, Striker::FrontFoot, 5.f,  Level::Overhead,10.f,  0,  16,  160.f, true,  true,  P::Tuck,            P::Dive,           P::Dive,          false,  0.f,   0.f,    0.f, 14},
+    {"PUNCH",         12,   3, 10, Striker::BackHand,  3.5f, Level::Mid,      6.f, 14,  10,   70.f, false, false, P::PunchChamber,    P::PunchStrike,    P::PunchStrike,   false, 27.f,   0.f,    0.f,  0},
+    {"FRONT KICK",    14,   4, 13, Striker::FrontFoot, 4.f,  Level::Mid,      9.f, 17,  12,  110.f, false, false, P::FrontChamber,    P::FrontStrike,    P::FrontFinish,   false, 20.f,   0.f,    0.f,  0},
+    {"ROUNDHOUSE",    18,   4, 18, Striker::BackFoot,  5.f,  Level::High,    14.f,  0,  14,  150.f, true,  false, P::RoundChamber,    P::RoundStrike,    P::RoundFinish,   false, 33.f,   0.f,    0.f,  0},
+    {"UPPERCUT",      13,   5, 16, Striker::FrontHand, 4.f,  Level::High,    11.f,  0,  12,   60.f, true,  false, P::UpperChamber,    P::UpperStrike,    P::UpperFinish,   false, 12.f,   0.f,    0.f,  0},
+    {"LOW PUNCH",     12,   3,  9, Striker::FrontHand, 3.5f, Level::Mid,      5.f, 12,   9,   60.f, false, false, P::LowPunchChamber, P::LowPunchStrike, P::LowPunchStrike, true,  0.f,   0.f,    0.f,  0},
+    {"LOW KICK",      13,   3, 11, Striker::FrontFoot, 4.f,  Level::Low,      7.f, 15,  10,   80.f, false, false, P::LowKickChamber,  P::LowKickStrike,  P::LowKickStrike, true,   0.f,   0.f,    0.f,  0},
+    {"SWEEP",         16,   5, 20, Striker::BackFoot,  4.5f, Level::Low,     10.f,  0,  14,   60.f, true,  false, P::SweepChamber,    P::SweepStrike,    P::SweepFinish,   true,  18.f,   0.f,    0.f,  0},
+    {"FLYING KICK",   12,  90,  0, Striker::FrontFoot, 4.5f, Level::High,    12.f,  0,  14,  140.f, true,  true,  P::FlyChamber,      P::FlyStrike,      P::FlyStrike,     false,  0.f, 115.f, -215.f, 10},
+    {"BACKFLIP KICK",  4,   8,  0, Striker::FrontFoot, 4.5f, Level::High,     9.f,  0,  12,  120.f, true,  true,  P::FlipChamber,     P::FlipStrike,     P::FlipStrike,    false,  0.f, -90.f, -260.f,  6},
+    {"AIR KICK",       4,  90,  0, Striker::FrontFoot, 4.5f, Level::High,     9.f, 18,  12,  100.f, false, true,  P::Tuck,            P::AirKick,        P::AirKick,       false,  0.f,   0.f,    0.f,  5},
+    {"DIVE KICK",      3,  90,  0, Striker::FrontFoot, 5.f,  Level::High,    10.f,  0,  16,  160.f, true,  true,  P::Tuck,            P::Dive,           P::Dive,          false,  0.f,   0.f,    0.f, 14},
 };
 // clang-format on
 
@@ -215,6 +215,7 @@ void Match::record() {
         s.airborne = f.airborne;
         s.support = f.support;
         s.health = f.health;
+        s.guard = f.guard;
     }
 }
 
@@ -334,10 +335,12 @@ void Match::stepFighter(int i, const Input& in) {
     const int pad = in.pad(), prevPad = f.prevIn.pad();
     const bool strikeEdge = in.strike && !f.prevIn.strike;
     const bool dirEdge = pad != 0 && pad != prevPad;
+    // A strike in the air waits until it is allowed (see Act::Air below).
+    const bool airWait = f.act == Act::Air && !f.airAttack;
     if (in.strike && (strikeEdge || dirEdge)) {
         f.bufPad = pad ? pad : 5;
         f.bufAge = 0;
-    } else if (f.bufPad && ++f.bufAge > kBufferFrames) {
+    } else if (f.bufPad && !airWait && ++f.bufAge > kBufferFrames) {
         f.bufPad = 0;
     }
     ++f.frame;
@@ -353,11 +356,24 @@ void Match::stepFighter(int i, const Input& in) {
             neutral(f, o, pad, prevPad);
             break;
         case Act::PreJump:
+            // Up and strike pressed a moment apart: the jump attack (or the
+            // uppercut) after all. Up and guard: a high guard.
+            if (f.bufPad) {
+                const Move m = moveFor(f.bufPad, f.facing, false);
+                f.bufPad = 0;
+                startMove(f, m);
+                break;
+            }
+            if (in.guard) {
+                startGuard(f, guardLevel(in));
+                break;
+            }
             if (in.dx != 0) f.jumpDx = in.dx;
             if (f.frame >= kPreJumpFrames) {
                 f.airborne = true;
                 f.support = -1;
                 f.peakY = f.y;
+                f.airFrames = 0;
                 f.airAttack = false;
                 f.vx = float(f.jumpDx) * kJumpVx;
                 f.vy = -kJumpSpeed;
@@ -371,10 +387,14 @@ void Match::stepFighter(int i, const Input& in) {
             }
             break;
         case Act::Air:
+            // No air attack lands sooner than kMinStrikeFrames after leaving the
+            // ground: one pressed earlier waits.
             if (f.bufPad && !f.airAttack) {
                 const Move m = moveFor(f.bufPad, f.facing, true);
-                f.bufPad = 0;
-                startMove(f, m);
+                if (f.airFrames + moveInfo(m).startup >= kMinStrikeFrames) {
+                    f.bufPad = 0;
+                    startMove(f, m);
+                }
             }
             break;
         case Act::Land:
@@ -384,6 +404,20 @@ void Match::stepFighter(int i, const Input& in) {
             }
             break;
         case Act::Roll:
+            // Down-forward and strike (or guard) pressed a moment apart: the
+            // sweep or low punch (or a low guard), from where the roll began.
+            if (f.frame <= kChordFrames && (f.bufPad || in.guard)) {
+                f.x = f.rollX;
+                f.vx = 0.f;
+                if (f.bufPad) {
+                    const Move m = moveFor(f.bufPad, f.facing, false);
+                    f.bufPad = 0;
+                    startMove(f, m);
+                } else {
+                    startGuard(f, guardLevel(in));
+                }
+                break;
+            }
             f.vx = float(f.rollDir) * kRollSpeed;
             if (f.frame >= kRollFrames) {
                 f.vx = 0.f;
@@ -396,7 +430,7 @@ void Match::stepFighter(int i, const Input& in) {
             break;
         case Act::Hit:
         case Act::Block:
-            if (f.act == Act::Block) f.crouchBlock = in.dy > 0;
+            if (f.act == Act::Block && (in.guard || in.center)) f.guard = in.guard ? guardLevel(in) : Level::Mid;
             if (!f.airborne) f.vx *= kFriction;
             if (f.frame >= f.stun && !f.airborne) {
                 setAct(f, Act::Stand);
@@ -430,6 +464,10 @@ void Match::neutral(Fighter& f, const Fighter& o, int pad, int prevPad) {
     }
     const Input& in = f.in;
     f.vx = 0.f;
+    if (in.guard) {
+        startGuard(f, guardLevel(in));
+        return;
+    }
     if (in.dy < 0) {
         f.jumpDx = in.dx;
         setAct(f, Act::PreJump);
@@ -437,6 +475,7 @@ void Match::neutral(Fighter& f, const Fighter& o, int pad, int prevPad) {
     }
     if ((pad == 1 || pad == 3) && pad != prevPad) {
         f.rollDir = in.dx;
+        f.rollX = f.x;
         setAct(f, Act::Roll);
         Event e;
         e.type = EventType::Jump;  // a whoosh
@@ -451,13 +490,22 @@ void Match::neutral(Fighter& f, const Fighter& o, int pad, int prevPad) {
     if (in.dy > 0) {
         next = Act::Crouch;
     } else if (in.center) {
-        next = Act::Guard;
+        startGuard(f, Level::Mid);  // 5 on its own: the middle guard
+        return;
     } else if (in.dx != 0) {
         next = Act::Walk;
         f.vx = float(in.dx) * (in.dx == f.facing ? kWalkFwd : kWalkBack);
         f.walkPhase += std::fabs(f.vx) * kTick / 26.f;
     }
     if (next != f.act) setAct(f, next);
+}
+
+void Match::startGuard(Fighter& f, Level level) {
+    f.vx = 0.f;
+    if (f.act != Act::Guard || f.guard != level) {
+        setAct(f, Act::Guard);
+        f.guard = level;
+    }
 }
 
 void Match::startMove(Fighter& f, Move m) {
@@ -469,6 +517,7 @@ void Match::startMove(Fighter& f, Move m) {
         f.airborne = true;
         f.support = -1;
         f.peakY = f.y;
+        f.airFrames = 0;
         f.vx = mi.jumpVx * float(f.facing);
         f.vy = mi.jumpVy;
         Event e;
@@ -496,6 +545,19 @@ void Match::startMove(Fighter& f, Move m) {
 }
 
 void Match::stepAttack(Fighter& f) {
+    // Strike first and a direction added a moment later: the move they chord.
+    // (Letting go of a key is not adding one.)
+    const Input& a = f.prevIn;
+    const Input& b = f.in;
+    const bool added = (a.dx != b.dx || a.dy != b.dy) && (a.dx == 0 || b.dx == a.dx) && (a.dy == 0 || b.dy == a.dy);
+    if (!f.airborne && f.bufPad && f.bufAge == 0 && added && f.frame <= kChordFrames) {
+        const Move m = moveFor(f.bufPad, f.facing, false);
+        f.bufPad = 0;
+        if (m != f.move) {
+            startMove(f, m);
+            return;
+        }
+    }
     const MoveInfo& mi = moveInfo(f.move);
     if (f.frame == mi.startup) {
         Event e;
@@ -529,6 +591,7 @@ void Match::physics(Fighter& f) {
     if (f.airborne) {
         const bool dive = f.act == Act::Attack && f.move == Move::DiveKick;
         if (!dive) f.vy = std::min(f.vy + kGravity * kTick, kMaxFall);
+        ++f.airFrames;
         const float fromY = f.y;
         f.x += f.vx * kTick;
         f.y += f.vy * kTick;
@@ -555,6 +618,7 @@ void Match::goAirborne(Fighter& f) {
     f.support = -1;
     f.vy = std::min(f.vy, 0.f);
     f.peakY = f.y;
+    f.airFrames = 0;
     switch (f.act) {
         case Act::Hit:
         case Act::Block:
@@ -639,6 +703,7 @@ void Match::land(Fighter& f, int support) {
             f.vx *= 0.5f;
             break;
         default:
+            if (f.act == Act::Air && !f.airAttack) f.bufPad = 0;  // an air strike still waiting: too late now
             f.vx = 0.f;
             f.move = Move::None;
             setAct(f, Act::Land);
@@ -748,13 +813,11 @@ void Match::applyHit(int attacker, Move move, Vec point) {
 
     Level level = mi.level;
     const float elevation = d.y - a.y;  // > 0: the attacker is higher up
-    if (elevation > kElevation) level = Level::Overhead;
+    if (elevation > kElevation) level = Level::High;
     else if (elevation < -kElevation) level = Level::Low;
     const bool facingIt = (a.x - d.x) * float(d.facing) >= -4.f;
-    const bool standGuard = d.act == Act::Guard || (d.act == Act::Block && !d.crouchBlock);
-    const bool crouchGuard = d.act == Act::Crouch || (d.act == Act::Block && d.crouchBlock);
-    const bool blocked = facingIt && !d.airborne &&
-                         ((standGuard && level != Level::Low) || (crouchGuard && level != Level::Overhead));
+    const bool guarding = d.act == Act::Guard || d.act == Act::Block;
+    const bool blocked = facingIt && !d.airborne && guarding && d.guard == level;
 
     Event e;
     e.fighter = d.id;
@@ -762,7 +825,6 @@ void Match::applyHit(int attacker, Move move, Vec point) {
     e.y = point.y;
     e.move = move;
     if (blocked) {
-        d.crouchBlock = crouchGuard;
         d.move = Move::None;
         setAct(d, Act::Block);
         d.stun = mi.blockstun;
@@ -843,7 +905,9 @@ Pose Match::targetPose(const Fighter& f) const {
         case Act::Walk:
             return lerp(pose(PoseId::Walk1), pose(PoseId::Walk2), 0.5f - 0.5f * std::cos(f.walkPhase * kTwoPi));
         case Act::Guard:
-            return pose(PoseId::Guard);
+        case Act::Block:
+            return pose(f.guard == Level::High ? PoseId::GuardHigh
+                                               : (f.guard == Level::Low ? PoseId::GuardLow : PoseId::Guard));
         case Act::Crouch:
             return pose(PoseId::Crouch);
         case Act::PreJump:
@@ -861,8 +925,6 @@ Pose Match::targetPose(const Fighter& f) const {
             return attackPose(f);
         case Act::Hit:
             return pose(f.lowHit ? PoseId::HitCrouch : PoseId::Hit);
-        case Act::Block:
-            return pose(f.crouchBlock ? PoseId::Crouch : PoseId::Guard);
         case Act::Fall:
             return lerp(pose(PoseId::Fall), pose(PoseId::Lying), smooth01(float(f.frame) / 30.f));
         case Act::Down:
